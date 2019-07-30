@@ -117,6 +117,7 @@ new_window() {
 	local window_name="$3"
 	local dir="$4"
 	local pane_index="$5"
+	local pane_title="$6"
 	local pane_id="${session_name}:${window_number}.${pane_index}"
 	if is_restoring_pane_contents && pane_contents_file_exists "$pane_id"; then
 		local pane_creation_command="$(pane_creation_command "$session_name" "$window_number" "$pane_index")"
@@ -124,6 +125,7 @@ new_window() {
 	else
 		tmux new-window -d -t "${session_name}:${window_number}" -n "$window_name" -c "$dir"
 	fi
+	tmux select-pane -t "${session_name}:${window_number}" -T "$pane_title"
 }
 
 new_session() {
@@ -132,6 +134,7 @@ new_session() {
 	local window_name="$3"
 	local dir="$4"
 	local pane_index="$5"
+	local pane_title="$6"
 	local pane_id="${session_name}:${window_number}.${pane_index}"
 	if is_restoring_pane_contents && pane_contents_file_exists "$pane_id"; then
 		local pane_creation_command="$(pane_creation_command "$session_name" "$window_number" "$pane_index")"
@@ -144,6 +147,7 @@ new_session() {
 	if [ $created_window_num -ne $window_number ]; then
 		tmux move-window -s "${session_name}:${created_window_num}" -t "${session_name}:${window_number}"
 	fi
+	tmux select-pane -T "$pane_title"
 }
 
 new_pane() {
@@ -152,6 +156,7 @@ new_pane() {
 	local window_name="$3"
 	local dir="$4"
 	local pane_index="$5"
+	local pane_title="$6"
 	local pane_id="${session_name}:${window_number}.${pane_index}"
 	if is_restoring_pane_contents && pane_contents_file_exists "$pane_id"; then
 		local pane_creation_command="$(pane_creation_command "$session_name" "$window_number" "$pane_index")"
@@ -159,36 +164,39 @@ new_pane() {
 	else
 		tmux split-window -t "${session_name}:${window_number}" -c "$dir"
 	fi
+	tmux select-pane -T "$pane_title"
 	# minimize window so more panes can fit
 	tmux resize-pane  -t "${session_name}:${window_number}" -U "999"
 }
 
 restore_pane() {
 	local pane="$1"
-	while IFS=$d read line_type session_name window_number window_name window_active window_flags pane_index dir pane_active pane_command pane_full_command; do
+	while IFS=$d read line_type session_name window_number window_name window_active window_flags pane_index dir pane_active pane_command pane_title pane_full_command; do
 		dir="$(remove_first_char "$dir")"
 		window_name="$(remove_first_char "$window_name")"
 		pane_full_command="$(remove_first_char "$pane_full_command")"
 		if pane_exists "$session_name" "$window_number" "$pane_index"; then
 			tmux rename-window -t "$window_number" "$window_name"
+
+			local pane_id="$(tmux display-message -p -F "#{pane_id}" -t "$session_name:$window_number")"
 			if is_restoring_from_scratch; then
 				# overwrite the pane
 				# happens only for the first pane if it's the only registered pane for the whole tmux server
-				local pane_id="$(tmux display-message -p -F "#{pane_id}" -t "$session_name:$window_number")"
-				new_pane "$session_name" "$window_number" "$window_name" "$dir" "$pane_index"
+				new_pane "$session_name" "$window_number" "$window_name" "$dir" "$pane_index" "$pane_title"
 				tmux kill-pane -t "$pane_id"
 			else
 				# Pane exists, no need to create it!
 				# Pane existence is registered. Later, its process also won't be restored.
 				register_existing_pane "$session_name" "$window_number" "$pane_index"
+				tmux select-pane -t "$pane_id" -T "$pane_title"
 			fi
 		elif window_exists "$session_name" "$window_number"; then
 			tmux rename-window -t "$window_number" "$window_name"
-			new_pane "$session_name" "$window_number" "$window_name" "$dir" "$pane_index"
+			new_pane "$session_name" "$window_number" "$window_name" "$dir" "$pane_index" "$pane_title"
 		elif session_exists "$session_name"; then
-			new_window "$session_name" "$window_number" "$window_name" "$dir" "$pane_index"
+			new_window "$session_name" "$window_number" "$window_name" "$dir" "$pane_index" "$pane_title"
 		else
-			new_session "$session_name" "$window_number" "$window_name" "$dir" "$pane_index"
+			new_session "$session_name" "$window_number" "$window_name" "$dir" "$pane_index" "$pane_title"
 		fi
 	done < <(echo "$pane")
 }
